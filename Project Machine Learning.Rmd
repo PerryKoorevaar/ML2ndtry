@@ -1,0 +1,92 @@
+---
+title: "Practical Machine Learning"
+author: "Perry Koorevaar"
+date: "Friday, October 17, 2014"
+output: html_document
+---
+# Introduction
+In this assignment it is requested to predict the way in which people performed barbell lifts. These ways are classified into 5 categories A-E. The data to predict on consist of acceleration and movements measurements on both the body and the barbell.
+
+# Step 1: Exploring and cleaning the data
+Both a training and a test set have been provided. By opening these files and visually inspecting them it becomes clear that several columns are irrelevant, either because they contain a lot of "NA's" or empty cells, or because they are obviously not relevant for predicting the outcome (e.g. the name of the test person is one of the variables). All these irrelevant columns are removed.
+
+```{r}
+library(caret); library(kernlab);library(ggplot2); library(lattice)
+traindata <- read.csv("pml-training.csv")
+testdata <- read.csv("pml-testing.csv")
+train1 <- traindata[colSums(is.na(traindata)) < 200]
+train2 <- train1[colSums(train1=="") < 200]
+c<-seq.int(8,60)
+train3 <- train2[,c]
+```
+
+The column with the outcome, labelled "classe", is a character variable, but for my first modelling attempt I will try a glm, and therefore translate the character into a numeric value. In the second model, discussed below, I keep the classification nature of the classe variable and directly predict "characters / classes".
+
+```{r}
+train3$classe <- as.numeric(train3$classe)
+```
+
+Identical clean up of columnss in the test set as for the training set
+```{r}
+test1 <- testdata[colSums(is.na(testdata)) < 2]
+test2 <- test1[colSums(test1=="") < 2]
+c<-seq.int(8,60)
+test3 <- test2[,c]
+test3$problem_id <- as.numeric(test3$problem_id)
+```
+
+# Step 2: Generalized linear model "glm"
+First the training data is used with the "glm" model. Principal Component Analysis (PCA) pre-processing is performed, and for cross validation "repeated k-fold cross validation" is used with k=10 and 5 repeats. These parameters are chosen "arbitrarily" but seem to make sense given the size of the data sets.
+
+```{r}
+modelFit <- train(train3$classe ~ ., method = "glm", preProcess = "pca", 
+                  data = train3, 
+                  trControl = trainControl(method = "repeatedcv", number=10, repeats=5,
+                  preProcOptions = list(thresh = 0.8)))
+print(modelFit)
+summary(modelFit)
+```
+
+Next we make a prediction of the (cleaned) test dataset which is in "test3", and translate back the numeric
+prediction into a character in the sequence A-E:
+
+```{r}
+voorspel <- round(predict(modelFit, test3),0)
+voorspelchar <- chartr("12345","ABCDE",voorspel)
+voorspelchar
+```
+For every row in the test dataset we now have a prediction for the " classe", i.e. the way in which the excercises wwere performed.
+
+# Step3: Classification model "rpart"
+The second model I try is a true classification model with the "rpart" method. The same pre-processing and cross validation is used as with the model described in Step2.
+
+```{r}
+train4 <- train2[,c]
+modelFit2 <- train(train4$classe ~ ., method = "rpart", preProcess = "pca", 
+                  data = train4, 
+                  trControl = trainControl(method = "repeatedcv", number=10, repeats=5,
+                                           preProcOptions = list(thresh = 0.8)))
+#
+print(modelFit2)
+#
+voorspel2 <- predict(modelFit2, test3)
+voorspel3 <- as.character(voorspel2)
+voorspel3
+```
+We now have a second prediction for the test set, independent from the first one.
+
+
+# Discussion of results
+To judge the accuracy of the results I first made a comparison between predicted and observed values for the classe variable in the training sets. For these sets the outcomes are known and one can get a feel of the accuracy by simply counting the number of correctly predicted observations over the total observations.
+```{r}
+# Overview accuracy glm  model
+predtrain <- round(predict(modelFit, train3),0)
+predtrainchar <- chartr("12345","ABCDE",predtrain)
+table(predtrainchar, train3$classe)
+#
+# Overview accuracy rpart  model
+predtrain2 <- predict(modelFit2, train4)
+table(predtrain2, train4$classe)
+```
+From this it can be calculated that the percentage of correctly predicted observations for the glm model = 25% and for thr rpart model = 36%. These results are, to my opinion, both poor, as totally random guessing would yield a succes rate of 1 in 5. 
+Since the rpart model perfroms better I will use this as the primary model in submitting the answers. Also, since the in sample error rate for this model is already high at 64% (1-36%), the out of sample rate is expected to be even more.  
